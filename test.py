@@ -44,44 +44,27 @@ if missing:
 with open(PDF_PATH, "rb") as f:
     pdf_bytes = f.read()
 
+# --------------------------------------------------------------
+# Read the first MAX_EMAILS rows from the CSV (column A = manufacturer, column G = e‑mail)
+# --------------------------------------------------------------
+clients = []
+with open(CSV_PATH, newline="", encoding="utf-8") as csvfile:
+    reader = csv.DictReader(csvfile)
+    for i, row in enumerate(reader):
+        if i >= MAX_EMAILS:
+            break
+        clients.append(row)
+
 def parse_emails(raw: str):
     """Split a raw e‑mail string into a list, handling commas and semicolons."""
     if not raw:
         return []
     return [e.strip() for e in raw.replace(";", ",").split(",") if e.strip()]
 
-def load_clients(csv_path):
-    """Read the CSV into a list of row dicts and return the fieldnames too."""
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        return list(reader), reader.fieldnames
-
-def write_clients(csv_path, rows, fieldnames):
-    """Atomically rewrite the CSV. Uses a .tmp file then os.replace so a
-    crash mid‑write cannot leave a half‑written file on disk."""
-    tmp = csv_path + ".tmp"
-    with open(tmp, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    os.replace(tmp, csv_path)
-
 # --------------------------------------------------------------
-# Load the CSV (column A = manufacturer, column G = e‑mail).
-# We read the whole file so we can rewrite it after each successful send,
-# dropping sent rows to prevent duplicate e‑mails on re‑runs.
+# Send personalized e‑mail to each client
 # --------------------------------------------------------------
-clients, fieldnames = load_clients(CSV_PATH)
-pending_rows = list(clients)
-
-# --------------------------------------------------------------
-# Send personalized e‑mail to each client. After a successful send,
-# the row is dropped from pending_rows and the CSV is rewritten so a
-# re‑run will not contact the same person again.
-# --------------------------------------------------------------
-sent_in_run = 0
-while pending_rows and sent_in_run < MAX_EMAILS:
-    client = pending_rows[0]
+for client in clients:
     manufacturer = client.get("Manufacturer/ Shop Name", "").strip()
     raw_emails = client.get("Email", "")
     email_list = parse_emails(raw_emails)
@@ -136,19 +119,6 @@ Website: www.monolithicrefractory.com
             smtp.send_message(msg)
         cc_display = ", ".join(cc_addrs) if cc_addrs else "none"
         print(f"✅ Sent to {to_addr} (CC: {cc_display}) – {manufacturer}")
-
-        # Drop the sent row from the CSV so this client is not contacted again
-        pending_rows.pop(0)
-        try:
-            write_clients(CSV_PATH, pending_rows, fieldnames)
-        except OSError as write_exc:
-            # Don't lose the in‑memory progress: keep the row removed locally,
-            # but warn the operator so they can inspect the file.
-            print(
-                f"⚠️  Could not update CSV after sending to {manufacturer}: "
-                f"{type(write_exc).__name__}: {write_exc}"
-            )
-        sent_in_run += 1
     except Exception as exc:  # pragma: no cover
         print(
             f"❌ Failed for {manufacturer} (to={to_addr}): {type(exc).__name__}: {exc}"
