@@ -1,43 +1,13 @@
-# Git ignore file for the project
-
-# ---------- Secrets & local config ----------
-# Environment files that contain credentials
+# Project specific ignores
+/data/
 .env
-.env.local
-.env.*.local
 
-# ---------- Python artifacts ----------
+# Python specific ignores
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.egg-info/
-.eggs/
-build/
-dist/
-venv/
-.venv/
-env/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-
-# ---------- IDE / editor ----------
-.vscode/
-.idea/
-*.swp
-*.swo
-.DS_Store
-Thumbs.db
 
 # ---------- Project data files (kept on disk, not under version control) ----------
 # Spreadsheets
 *.xlsx
 *.xls
 *.csv
-
-# PDFs (e.g. introduction brochure attached to emails)
-*.pdf
-
-# Notes / guides
-*.txt
