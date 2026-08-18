@@ -128,7 +128,7 @@ def scrape_url(url):
 
 # ------------------------------
 
-input_file = r"C:\Users\sahil\Downloads\Neha General marketting\Cleaner.xlsx"
+input_file = r"C:\Users\sahil\Documents\Neha General marketting\data\Cleaner.xlsx"
 df = pd.read_excel(input_file)
 
 # Create Email column if it doesn't exist
