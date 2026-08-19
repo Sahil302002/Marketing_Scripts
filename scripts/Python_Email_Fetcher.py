@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -6,6 +7,9 @@ from urllib.parse import urljoin
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Email regex
 EMAIL_REGEX = r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
@@ -126,14 +130,62 @@ def scrape_url(url):
         return set()
 
 
+def dedupe_by_manufacturer(df):
+    """Drop rows that repeat a Manufacturer/Shop Name already seen earlier in
+    the sheet, so no company appears more than once in Cleaner.xlsx. Rows
+    with a blank name are left alone since they can't be confidently matched
+    to one another. Among duplicates, preference goes to (in order): a row
+    with a real Email result (not blank or 'Not Found'), then a row that at
+    least has a Website URL to scrape, otherwise the first occurrence.
+    """
+    # .fillna("") before stringifying so a real NaN can't slip through as the
+    # literal text "nan" and be mistaken for a filled-in value.
+    name_col = df.columns[0]
+    normalized = df[name_col].fillna("").astype(str).str.strip().str.lower()
+    is_blank_name = normalized == ""
+
+    email = df["Email"] if "Email" in df.columns else pd.Series("", index=df.index)
+    email_text = email.fillna("").astype(str).str.strip()
+    no_result = email_text.isin(["", "Not Found"])
+
+    website = df["Website URL"] if "Website URL" in df.columns else pd.Series("", index=df.index)
+    website_text = website.fillna("").astype(str).str.strip()
+    no_website = website_text.isin(["", "-"])
+
+    sort_key = pd.DataFrame({
+        "normalized": normalized,
+        "no_result": no_result,
+        "no_website": no_website,
+        "order": range(len(df)),
+    }, index=df.index)
+
+    keep = is_blank_name.copy()
+    ranked = sort_key[~is_blank_name].sort_values(["normalized", "no_result", "no_website", "order"])
+    keep.loc[ranked.drop_duplicates(subset="normalized", keep="first").index] = True
+
+    removed = int((~keep).sum())
+    if removed:
+        print(f"🧹 Removed {removed} duplicate manufacturer/shop-name row(s) before scraping.")
+
+    return df[keep].reset_index(drop=True)
+
+
 # ------------------------------
 
-input_file = r"C:\Users\sahil\Downloads\Neha General marketting\Cleaner.xlsx"
+input_file = os.getenv("CLEANER_XLSX_PATH")
+if not input_file:
+    raise RuntimeError("Missing required env variable: CLEANER_XLSX_PATH")
+
 df = pd.read_excel(input_file)
 
 # Create Email column if it doesn't exist
 if "Email" not in df.columns:
     df["Email"] = ""
+
+# Remove duplicate manufacturers/shops up front and persist the cleaned
+# sheet before scraping starts, so no company appears more than once.
+df = dedupe_by_manufacturer(df)
+df.to_excel(input_file, index=False)
 
 for index, row in df.iterrows():
 

@@ -21,14 +21,15 @@ This project contains Python scripts designed to automate the process of finding
 This script automatically crawls and extracts email addresses from a list of company websites stored in an Excel spreadsheet.
 
 #### Key Features
+* **Duplicate Removal:** Before scraping starts, drops rows that repeat a `Manufacturer/Shop Name` already seen earlier in `Cleaner.xlsx` and saves the cleaned sheet immediately, so no company is scraped or listed more than once. Rows with a blank name are left alone (can't be confidently matched). Among duplicates, the row kept is (in order of preference): one with a real `Email` result (not blank or `Not Found`), otherwise one that at least has a `Website URL` to scrape, otherwise the first occurrence.
 * **Excel Integration:** Reads website URLs from `Cleaner.xlsx`, processes them, and writes the results back to an `Email` column.
 * **Targeted Page Crawling:** If emails are not found on the home page, it automatically scans common pages (like Contact Us, About, Support, Careers, etc.) or tries direct common URLs.
 * **Robust Network Handling:** Implements an exponential backoff retry strategy for handling temporary server errors or rate limits (HTTP 429, 500, 502, 503, 504) and enforces a 15-second request timeout.
 * **Email Filtering:** Uses regular expressions to match and isolate standard email structures.
 
 #### Setup & Requirements
-* Requires an input file at: `C:\Users\sahil\Downloads\Neha General marketting\Cleaner.xlsx`
-* Dependencies: `pandas`, `requests`, `beautifulsoup4`, `urllib3`, `openpyxl` (for reading Excel files)
+* Reads its input file from the `CLEANER_XLSX_PATH` variable in `.env` (the same one used by `email_sender.py` — see below).
+* Dependencies: `pandas`, `requests`, `beautifulsoup4`, `urllib3`, `openpyxl`, `python-dotenv`
 
 ---
 
