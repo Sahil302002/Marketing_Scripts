@@ -100,17 +100,21 @@ def _append_contact_rows(csv_path, rows):
 
 
 def sync_no_mail_contacts(xlsx_path, csv_path):
-    """Append Cleaner.xlsx rows with a blank/'Not Found' e‑mail to the no‑mail CSV.
+    """Move Cleaner.xlsx rows with a blank/'Not Found' e‑mail into the no‑mail CSV.
 
     Existing rows in the CSV are preserved; new rows are appended below them.
-    Creates the CSV with headers if it doesn't exist yet.
+    Creates the CSV with headers if it doesn't exist yet. Flagged rows are then
+    removed from Cleaner.xlsx (and the file re-saved) so they can never be
+    picked up as send candidates and never get re-appended to the CSV on a
+    later run.
     """
     df = pd.read_excel(xlsx_path)
     cols = _detect_source_columns(df)
 
-    flagged = df[df[cols["email"]].apply(_is_missing_email)]
+    missing_mask = df[cols["email"]].apply(_is_missing_email)
+    flagged = df[missing_mask]
     if flagged.empty:
-        print("📋 Cleaner sync: no blank/'Not Found' emails found – nothing to append.")
+        print("📋 Cleaner sync: no blank/'Not Found' emails found – nothing to move.")
         return
 
     next_sr_no = _next_sr_no(csv_path)
@@ -129,7 +133,9 @@ def sync_no_mail_contacts(xlsx_path, csv_path):
         ])
     _append_contact_rows(csv_path, rows)
 
-    print(f"📋 Cleaner sync: appended {len(flagged)} row(s) with missing/blank email to {csv_path}")
+    df[~missing_mask].to_excel(xlsx_path, index=False)
+
+    print(f"📋 Cleaner sync: moved {len(flagged)} row(s) with missing/blank email to {csv_path} and removed them from {xlsx_path}")
 
 
 if os.path.isfile(CLEANER_XLSX_PATH):
