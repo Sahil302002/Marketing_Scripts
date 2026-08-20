@@ -1,5 +1,6 @@
 import os
 import csv
+import re
 import smtplib
 import time
 from datetime import datetime
@@ -172,14 +173,52 @@ def _decode(value):
     return value.decode(errors="replace") if isinstance(value, bytes) else str(value)
 
 
+# Phrases mail providers use for account-level throttling/blocks (e.g. Zoho's
+# "550 5.4.6 Unusual sending activity detected"). These are about the SENDING
+# ACCOUNT, not the recipient, so they must never be treated as a permanent,
+# recipient-specific failure, and there is no point continuing to send more
+# mail in the same run once one of these shows up.
+ACCOUNT_BLOCKED_PHRASES = (
+    "unusual sending activity",
+    "unblockme",
+    "sending limit",
+    "account.*suspend",
+    "temporarily rate limited",
+    "exceeded the rate",
+)
+
+
+def _failure_text(exc):
+    """Build one lowercase string containing every human-readable detail of an
+    SMTP exception, for keyword matching."""
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return "; ".join(
+            f"{addr}: {code} {_decode(msg)}" for addr, (code, msg) in exc.recipients.items()
+        ).lower()
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return f"{exc.smtp_code} {_decode(exc.smtp_error)}".lower()
+    return str(exc).lower()
+
+
+def _is_account_blocked(exc):
+    """True when the SMTP error indicates the sending account/IP itself has
+    been throttled or blocked by the provider, rather than a problem with the
+    specific recipient address."""
+    text = _failure_text(exc)
+    return any(re.search(phrase, text) for phrase in ACCOUNT_BLOCKED_PHRASES)
+
+
 def _classify_failure(exc):
     """Decide whether a send failure is permanent (re-running won't fix it) or transient.
 
     A refused/invalid recipient address or a 5xx SMTP response is permanent —
     the same email to the same address will fail again. Connection issues,
     timeouts, and 4xx responses are treated as transient and left for a later
-    run to retry.
+    run to retry. Account-level throttling/blocks (see _is_account_blocked)
+    are always transient – the recipient was never actually tried.
     """
+    if _is_account_blocked(exc):
+        return False, f"Sending account blocked/throttled by provider – {_failure_text(exc)}"
     if isinstance(exc, smtplib.SMTPRecipientsRefused):
         details = "; ".join(
             f"{addr}: {code} {_decode(msg)}" for addr, (code, msg) in exc.recipients.items()
@@ -270,6 +309,16 @@ Website: www.monolithicrefractory.com
         print(
             f"❌ Failed for {manufacturer} (to={to_addr}): {type(exc).__name__}: {exc}"
         )
+        if _is_account_blocked(exc):
+            print(
+                f"🛑 Sending account appears blocked/rate-limited by {SMTP_SERVER} – "
+                f"{_failure_text(exc)}\n"
+                "   This is NOT a problem with this recipient, so the row is left untouched "
+                "in Cleaner.xlsx for the next run. Stopping now instead of burning through "
+                "the rest of today's batch against a blocked account – resolve the block "
+                "(see the unblock link above) before running again."
+            )
+            break
         permanent, reason = _classify_failure(exc)
         if permanent:
             _finalize_client(row_index, client, f"Failed {datetime.now().isoformat()} – {reason}")
